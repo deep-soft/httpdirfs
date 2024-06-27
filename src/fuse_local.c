@@ -95,23 +95,29 @@ static int fs_open(const char *path, struct fuse_file_info *fi)
     if (!link) {
         return -ENOENT;
     }
+    lprintf(debug, "%s found.\n", path);
     if ((fi->flags & O_RDWR) != O_RDONLY) {
         return -EROFS;
     }
     if (CACHE_SYSTEM_INIT) {
+        lprintf(debug, "Cache_open(%s);\n", path);
         fi->fh = (uint64_t) Cache_open(path);
         if (!fi->fh) {
             /*
              * The link clearly exists, the cache cannot be opened, attempt
              * cache creation
              */
+            lprintf(debug, "Cache_delete(%s);\n", path);
             Cache_delete(path);
+            lprintf(debug, "Cache_create(%s);\n", path);
             Cache_create(path);
+            lprintf(debug, "Cache_open(%s);\n", path);
             fi->fh = (uint64_t) Cache_open(path);
             /*
              * The cache definitely cannot be opened for some reason.
              */
             if (!fi->fh) {
+                lprintf(fatal, "Cache file creation failure for %s.\n", path);
                 return -ENOENT;
             }
         }
@@ -137,6 +143,12 @@ fs_readdir(const char *path, void *buf, fuse_fill_dir_t dir_add,
     (void) offset;
     (void) fi;
     LinkTable *linktbl;
+
+#ifdef DEBUG
+    static int j = 0;
+    lprintf(debug, "!!!!Calling fs_readdir for the %d time!!!!\n", j);
+    j++;
+#endif
 
     linktbl = path_to_Link_LinkTable_new(path);
     if (!linktbl) {

@@ -263,7 +263,8 @@ static void LinkTable_uninitialised_fill(LinkTable *linktbl)
  */
 static LinkTable *single_LinkTable_new(const char *url)
 {
-    char *ptr = strrchr(url, '/') + 1;
+    char *orig_ptr = strrchr(url, '/') + 1;
+    char *ptr = curl_easy_unescape(NULL, orig_ptr, 0, NULL);
     LinkTable *linktbl = LinkTable_alloc(url);
     Link *link = Link_new(ptr, LINK_UNINITIALISED_FILE);
     strncpy(link->f_url, url, MAX_FILENAME_LEN);
@@ -461,7 +462,6 @@ void Link_set_file_stat(Link *this_link, CURL *curl)
 
 static void LinkTable_fill(LinkTable *linktbl)
 {
-    CURL *c = curl_easy_init();
     Link *head_link = linktbl->links[0];
     lprintf(debug, "Filling %s\n", head_link->f_url);
     for (int i = 1; i < linktbl->num; i++) {
@@ -473,9 +473,9 @@ static void LinkTable_fill(LinkTable *linktbl)
            will definitely be happy with it (e.g., curl won't accept URLs with
            spaces in them!). If we only escaped it, and there were already
            encoded characters in it, then that would break the link. */
-        char *unescaped_path = curl_easy_unescape(c, this_link->linkpath, 0,
+        char *unescaped_path = curl_easy_unescape(NULL, this_link->linkpath, 0,
                                NULL);
-        char *escaped_path = curl_easy_escape(c, unescaped_path, 0);
+        char *escaped_path = curl_easy_escape(NULL, unescaped_path, 0);
         curl_free(unescaped_path);
         /* Our code does the wrong thing if there's a trailing slash that's been
            replaced with %2F, which curl_easy_escape does, God bless it, so if
@@ -488,13 +488,12 @@ static void LinkTable_fill(LinkTable *linktbl)
         strncpy(this_link->f_url, url, MAX_PATH_LEN);
         FREE(url);
         char *unescaped_linkname;
-        unescaped_linkname = curl_easy_unescape(c, this_link->linkname,
+        unescaped_linkname = curl_easy_unescape(NULL, this_link->linkname,
                                                 0, NULL);
         strncpy(this_link->linkname, unescaped_linkname, MAX_FILENAME_LEN);
         curl_free(unescaped_linkname);
     }
     LinkTable_uninitialised_fill(linktbl);
-    curl_easy_cleanup(c);
 }
 
 /**
@@ -572,79 +571,81 @@ LinkTable *LinkTable_alloc(const char *url)
 
 LinkTable *LinkTable_new(const char *url)
 {
-    LinkTable *linktbl = LinkTable_alloc(url);
-    linktbl->index_time = time(NULL);
-
-    /*
-     * start downloading the base URL
-     */
-    TransferStruct ts = Link_download_full(linktbl->links[0]);
-    if (ts.curr_size == 0) {
-        LinkTable_free(linktbl);
-        return NULL;
-    }
-
-    /*
-     * Otherwise parsed the received data
-     */
-    GumboOutput *output = gumbo_parse(ts.data);
-    HTML_to_LinkTable(url, output->root, linktbl);
-    gumbo_destroy_output(&kGumboDefaultOptions, output);
-    FREE(ts.data);
-
-    int skip_fill = 0;
     char *unescaped_path;
-    CURL *c = curl_easy_init();
     unescaped_path =
-        curl_easy_unescape(c, url + ROOT_LINK_OFFSET, 0, NULL);
+        curl_easy_unescape(NULL, url + ROOT_LINK_OFFSET, 0, NULL);
+    LinkTable *linktbl = NULL;
+
+    /*
+     * Attempt to load the LinkTable from the disk.
+     */
     if (CACHE_SYSTEM_INIT) {
         CacheDir_create(unescaped_path);
         LinkTable *disk_linktbl;
+
         disk_linktbl = LinkTable_disk_open(unescaped_path);
         if (disk_linktbl) {
             /*
-             * Check if we need to update the link table
+             * Check if the LinkTable needs to be refreshed based on timeout.
              */
-            lprintf(debug,
-                    "disk_linktbl->num: %d, linktbl->num: %d\n",
-                    disk_linktbl->num, linktbl->num);
-            if (disk_linktbl->num == linktbl->num) {
-                LinkTable_free(linktbl);
-                linktbl = disk_linktbl;
-                skip_fill = 1;
-            } else {
+            time_t time_now = time(NULL);
+            if (time_now - disk_linktbl->index_time  > CONFIG.refresh_timeout) {
+                lprintf(info, "time_now: %d, index_time: %d\n", time_now,
+                        disk_linktbl->index_time);
+                lprintf(info, "diff: %d, limit: %d\n",
+                        time_now - disk_linktbl->index_time,
+                        CONFIG.refresh_timeout);
                 LinkTable_free(disk_linktbl);
+            } else {
+                linktbl = disk_linktbl;
             }
         }
     }
 
-    if (!skip_fill) {
-        /*
-         * Fill in the link table
-         */
-        LinkTable_fill(linktbl);
-    } else {
-        /*
-         * Fill in the holes in the link table
-         */
-        LinkTable_invalid_reset(linktbl);
-        LinkTable_uninitialised_fill(linktbl);
-    }
-
     /*
-     * Save the link table
+     * Download a new LinkTable because we didn't manange to load it from the
+     * disk
      */
-    if (CACHE_SYSTEM_INIT) {
-        if (LinkTable_disk_save(linktbl, unescaped_path)) {
-            lprintf(error, "Failed to save the LinkTable!\n");
+    if (!linktbl) {
+        linktbl->index_time = time(NULL);
+        lprintf(debug, "linktbl->index_time: %d\n", linktbl->index_time);
+
+        /*
+        * start downloading the base URL
+        */
+        TransferStruct ts = Link_download_full(linktbl->links[0]);
+        if (ts.curr_size == 0) {
+            LinkTable_free(linktbl);
+            return NULL;
+        }
+
+        /*
+        * Otherwise parsed the received data
+        */
+        GumboOutput *output = gumbo_parse(ts.data);
+        HTML_to_LinkTable(url, output->root, linktbl);
+        gumbo_destroy_output(&kGumboDefaultOptions, output);
+        FREE(ts.data);
+
+        LinkTable_fill(linktbl);
+
+        /*
+        * Save the link table
+        */
+        if (CACHE_SYSTEM_INIT) {
+            if (LinkTable_disk_save(linktbl, unescaped_path)) {
+                lprintf(error, "Failed to save the LinkTable!\n");
+            }
         }
     }
 
-    curl_free(unescaped_path);
-    curl_easy_cleanup(c);
-
+#ifdef DEBUG
+    static int i = 0;
+    lprintf(debug, "!!!!Calling LinkTable_new for the %d time!!!!\n", i);
+    i++;
+#endif
+    free(unescaped_path);
     LinkTable_print(linktbl);
-
     return linktbl;
 }
 
@@ -660,6 +661,14 @@ static void LinkTable_disk_delete(const char *dirn)
     FREE(metadirn);
 }
 
+/* This is necessary to get the compiler on some platforms to stop
+   complaining about the fact that we're not using the return value of
+   fread, when we know we aren't and that's fine. */
+static inline void ignore_value(int i)
+{
+    (void) i;
+}
+
 int LinkTable_disk_save(LinkTable *linktbl, const char *dirn)
 {
     char *metadirn = path_append(META_DIR, dirn);
@@ -673,16 +682,20 @@ int LinkTable_disk_save(LinkTable *linktbl, const char *dirn)
         FREE(path);
         return -1;
     }
-    FREE(path);
 
-    fwrite(&linktbl->num, sizeof(int), 1, fp);
+    lprintf(debug, "linktbl->index_time: %d\n", linktbl->index_time);
+    if (fwrite(&linktbl->num, sizeof(int), 1, fp) != 1 ||
+            fwrite(&linktbl->index_time, sizeof(time_t), 1, fp) != 1) {
+        lprintf(error, "Failed to save the header of %s!\n", path);
+    }
+    FREE(path);
     for (int i = 0; i < linktbl->num; i++) {
-        fwrite(linktbl->links[i]->linkname, sizeof(char),
-               MAX_FILENAME_LEN, fp);
-        fwrite(linktbl->links[i]->f_url, sizeof(char), MAX_PATH_LEN, fp);
-        fwrite(&linktbl->links[i]->type, sizeof(LinkType), 1, fp);
-        fwrite(&linktbl->links[i]->content_length, sizeof(size_t), 1, fp);
-        fwrite(&linktbl->links[i]->time, sizeof(long), 1, fp);
+        ignore_value(fwrite(linktbl->links[i]->linkname, sizeof(char),
+                            MAX_FILENAME_LEN, fp));
+        ignore_value(fwrite(linktbl->links[i]->f_url, sizeof(char), MAX_PATH_LEN, fp));
+        ignore_value(fwrite(&linktbl->links[i]->type, sizeof(LinkType), 1, fp));
+        ignore_value(fwrite(&linktbl->links[i]->content_length, sizeof(size_t), 1, fp));
+        ignore_value(fwrite(&linktbl->links[i]->time, sizeof(long), 1, fp));
     }
 
     int res = 0;
@@ -701,14 +714,6 @@ int LinkTable_disk_save(LinkTable *linktbl, const char *dirn)
     return res;
 }
 
-/* This is necessary to get the compiler on some platforms to stop
-   complaining about the fact that we're not using the return value of
-   fread, when we know we aren't and that's fine. */
-static inline void ignore_value(int i)
-{
-    (void) i;
-}
-
 LinkTable *LinkTable_disk_open(const char *dirn)
 {
     char *metadirn = path_append(META_DIR, dirn);
@@ -722,21 +727,22 @@ LinkTable *LinkTable_disk_open(const char *dirn)
     FREE(metadirn);
 
     if (!fp) {
+        lprintf(debug, "Linktable at %s does not exist.", path);
         FREE(path);
         return NULL;
     }
 
     LinkTable *linktbl = CALLOC(1, sizeof(LinkTable));
-
-    if (sizeof(int) != fread(&linktbl->num, sizeof(int), 1, fp)) {
-        /*
-         * reached EOF
-         */
-        lprintf(error, "reached EOF!\n");
+    if (fread(&linktbl->num, sizeof(int), 1, fp) != 1 ||
+            fread(&linktbl->index_time, sizeof(time_t), 1, fp) != 1) {
+        lprintf(error, "Failed to read the header of %s!\n", path);
         LinkTable_free(linktbl);
         LinkTable_disk_delete(dirn);
+        FREE(path);
         return NULL;
     }
+    lprintf(debug, "linktbl->index_time: %d\n", linktbl->index_time);
+
     linktbl->links = CALLOC(linktbl->num, sizeof(Link *));
     for (int i = 0; i < linktbl->num; i++) {
         linktbl->links[i] = CALLOC(1, sizeof(Link));
@@ -751,16 +757,13 @@ LinkTable *LinkTable_disk_open(const char *dirn)
                            sizeof(size_t), 1, fp));
         ignore_value(fread(&linktbl->links[i]->time, sizeof(long), 1, fp));
         if (feof(fp)) {
-            /*
-             * reached EOF
-             */
-            lprintf(error, "reached EOF!\n");
+            lprintf(error, "Corrupted LinkTable!\n");
             LinkTable_free(linktbl);
             LinkTable_disk_delete(dirn);
             return NULL;
         }
         if (ferror(fp)) {
-            lprintf(error, "encountered ferror!\n");
+            lprintf(error, "Encountered ferror!\n");
             LinkTable_free(linktbl);
             LinkTable_disk_delete(dirn);
             return NULL;
@@ -770,6 +773,8 @@ LinkTable *LinkTable_disk_open(const char *dirn)
         lprintf(error,
                 "cannot close the file pointer, %s\n", strerror(errno));
     }
+
+    FREE(path);
     return linktbl;
 }
 
@@ -789,15 +794,7 @@ LinkTable *path_to_Link_LinkTable_new(const char *path)
     }
 
     if (next_table) {
-        time_t time_now = time(NULL);
-        if (time_now - next_table->index_time  > CONFIG.refresh_timeout) {
-            /* refresh directory contents */
-            LinkTable_free(next_table);
-            next_table = NULL;
-            if (link) {
-                link->next_table = NULL;
-            }
-        }
+
     }
     if (!next_table) {
         if (CONFIG.mode == NORMAL) {
@@ -1067,8 +1064,8 @@ long Link_download(Link *link, char *output_buf, size_t req_size, off_t offset)
     header.data = NULL;
 
     if (offset + req_size > link->content_length) {
-        lprintf(error,
-                "requested size too large, req_size: %lu, recv: %ld, content-length: %ld\n",
+        lprintf(info,
+                "requested size too larger than remaining size, req_size: %lu, recv: %ld, content-length: %ld\n",
                 req_size, recv, link->content_length);
         req_size = link->content_length - offset;
     }

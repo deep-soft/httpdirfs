@@ -163,12 +163,12 @@ static int Meta_read(Cache *cf)
         return EIO;
     }
 
-    if (sizeof(long) != fread(&cf->time, sizeof(long), 1, fp) ||
-            sizeof(off_t) != fread(&cf->content_length, sizeof(off_t), 1, fp) ||
-            sizeof(int) != fread(&cf->blksz, sizeof(int), 1, fp) ||
-            sizeof(long) != fread(&cf->segbc, sizeof(long), 1, fp) ||
-            ferror(fp)) {
-        lprintf(error, "error reading core metadata!\n");
+    if (    1 != fread(&cf->time, sizeof(long), 1, fp) ||
+            1 != fread(&cf->content_length, sizeof(off_t), 1, fp) ||
+            1 != fread(&cf->blksz, sizeof(int), 1, fp) ||
+            1 != fread(&cf->segbc, sizeof(long), 1, fp) ||
+            ferror(fp) ) {
+        lprintf(error, "error reading core metadata %s!\n", cf->path);
         return EIO;
     }
 
@@ -541,7 +541,9 @@ static void Cache_free(Cache *cf)
 static int Cache_exist(const char *fn)
 {
     char *metafn = path_append(META_DIR, fn);
+    lprintf(debug, "metafn: %s\n", metafn);
     char *datafn = path_append(DATA_DIR, fn);
+    lprintf(debug, "datafn: %s\n", datafn);
     /*
      * access() returns 0 on success
      */
@@ -549,15 +551,17 @@ static int Cache_exist(const char *fn)
     int no_data = access(datafn, F_OK);
 
     if (no_meta ^ no_data) {
+        lprintf(warning, "Cache file partially missing.\n");
         if (no_meta) {
-            lprintf(warning, "Cache file partially missing.\n");
+            lprintf(debug, "Unlinking datafn: %s\n", datafn);
             if (unlink(datafn)) {
-                lprintf(error, "unlink(): %s\n", strerror(errno));
+                lprintf(fatal, "unlink(): %s\n", strerror(errno));
             }
         }
         if (no_data) {
+            lprintf(debug, "Unlinking metafn: %s\n", metafn);
             if (unlink(metafn)) {
-                lprintf(error, "unlink(): %s\n", strerror(errno));
+                lprintf(fatal, "unlink(): %s\n", strerror(errno));
             }
         }
     }
@@ -666,6 +670,7 @@ int Cache_create(const char *path)
     Link *this_link = path_to_Link(path);
 
     char *fn = "__UNINITIALISED__";
+
     if (CONFIG.mode == NORMAL) {
         fn = curl_easy_unescape(NULL,
                                 this_link->f_url + ROOT_LINK_OFFSET, 0,
@@ -710,7 +715,13 @@ int Cache_create(const char *path)
 
     int res = Cache_exist(fn);
 
+    if (res) {
+        lprintf(fatal, "Cache file creation failed for %s\n", path);
+    }
+
     if (CONFIG.mode == NORMAL) {
+        curl_free(fn);
+    } else if (CONFIG.mode == SONIC) {
         curl_free(fn);
     }
 
