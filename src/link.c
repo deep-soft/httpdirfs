@@ -131,6 +131,14 @@ static CURL *Link_to_curl(Link *link)
         }
     }
 
+    if (CONFIG.http_headers) {
+        ret =
+            curl_easy_setopt(curl, CURLOPT_HTTPHEADER, CONFIG.http_headers);
+        if (ret) {
+            lprintf(error, "%s", curl_easy_strerror(ret));
+        }
+    }
+
     if (CONFIG.http_username) {
         ret = curl_easy_setopt(curl, CURLOPT_USERNAME, CONFIG.http_username);
         if (ret) {
@@ -607,6 +615,7 @@ LinkTable *LinkTable_new(const char *url)
      * disk
      */
     if (!linktbl) {
+        linktbl = LinkTable_alloc(url);
         linktbl->index_time = time(NULL);
         lprintf(debug, "linktbl->index_time: %d\n", linktbl->index_time);
 

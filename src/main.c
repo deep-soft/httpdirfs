@@ -201,7 +201,8 @@ parse_arg_list(int argc, char **argv, char ***fuse_argv, int *fuse_argc)
         { "single-file-mode", required_argument, NULL, 'L' },   /* 22 */
         { "cacert", required_argument, NULL, 'L' },     /* 23 */
         { "proxy-cacert", required_argument, NULL, 'L' },       /* 24 */
-        { "refresh-timeout", required_argument, NULL, 'L' }, /* 25 */
+        { "refresh-timeout", required_argument, NULL, 'L' },    /* 25 */
+        { "http-header", required_argument, NULL, 'L' },        /* 26 */
         { 0, 0, 0, 0 }
     };
     while ((c =
@@ -309,6 +310,10 @@ parse_arg_list(int argc, char **argv, char ***fuse_argv, int *fuse_argc)
             case 25:
                 CONFIG.refresh_timeout = atoi(optarg);
                 break;
+            case 26:
+                CONFIG.http_headers =
+                    curl_slist_append(CONFIG.http_headers, strdup(optarg));
+                break;
             default:
                 fprintf(stderr, "see httpdirfs -h for usage\n");
                 return 1;
@@ -368,6 +373,7 @@ HTTPDirFS options:\n\
         --dl-seg-size       Set cache download segment size, in MB (default: 8)\n\
                             Note: this setting is ignored if previously\n\
                             cached data is found for the requested file.\n\
+        --http-header       Set one or more HTTP headers\n\
         --max-seg-count     Set maximum number of download segments a file\n\
                             can have. (default: 128*1024)\n\
                             With the default setting, the maximum memory usage\n\
