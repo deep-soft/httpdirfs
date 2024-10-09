@@ -9,6 +9,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <ftw.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -34,23 +35,53 @@ static pthread_mutex_t cf_lock;
  */
 static char *DATA_DIR;
 
+
+char *CacheSystem_get_cache_dir()
+{
+    if (CONFIG.cache_dir) {
+        return CONFIG.cache_dir;
+    }
+
+    const char *default_cache_subdir = "/.cache";
+    char *cache_dir = NULL;
+
+    const char *xdg_cache_home = getenv("XDG_CACHE_HOME");
+    if (xdg_cache_home) {
+        cache_dir = strndup(xdg_cache_home, MAX_PATH_LEN);
+    } else {
+        const char *user_home = getenv("HOME");
+        if (user_home) {
+            cache_dir = path_append(user_home, default_cache_subdir);
+        } else {
+            lprintf(warning, "$HOME is unset\n");
+            /*
+             * XDG_CACHE_HOME and HOME already are full paths. Not relying
+             * on environment PWD since it too may be undefined.
+             */
+            const char *cur_dir = realpath("./", NULL);
+            if (cur_dir) {
+                cache_dir = path_append(cur_dir, default_cache_subdir);
+            } else {
+                lprintf(fatal, "Could not create cache directory\n");
+            }
+        }
+    }
+    return cache_dir;
+}
+
 /**
  * \brief Calculate cache system directory path
  */
 static char *CacheSystem_calc_dir(const char *url)
 {
-    char *xdg_cache_home = getenv("XDG_CACHE_HOME");
-    if (!xdg_cache_home) {
-        char *home = getenv("HOME");
-        char *xdg_cache_home_default = "/.cache";
-        xdg_cache_home = path_append(home, xdg_cache_home_default);
-    }
+    char *cache_home = CacheSystem_get_cache_dir();
+
     if (mkdir
-            (xdg_cache_home, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)
+            (cache_home, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)
             && (errno != EEXIST)) {
         lprintf(fatal, "mkdir(): %s\n", strerror(errno));
     }
-    char *cache_dir_root = path_append(xdg_cache_home, "/httpdirfs/");
+    char *cache_dir_root = path_append(cache_home, "/httpdirfs/");
     if (mkdir
             (cache_dir_root, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)
             && (errno != EEXIST)) {
@@ -81,6 +112,7 @@ static char *CacheSystem_calc_dir(const char *url)
         lprintf(fatal, "mkdir(): %s\n", strerror(errno));
     }
     FREE(fn);
+    FREE(cache_home);
     FREE(cache_dir_root);
     curl_free(escaped_url);
     curl_easy_cleanup(c);
@@ -142,6 +174,29 @@ void CacheSystem_init(const char *path, int url_supplied)
     }
 
     CACHE_SYSTEM_INIT = 1;
+}
+
+static int ntfw_cb(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
+{
+    (void) sb;
+    (void) typeflag;
+    (void) ftwbuf;
+    return remove(fpath);
+}
+
+void CacheSystem_clear()
+{
+    char *cache_home = CacheSystem_get_cache_dir();
+    const char *cache_del;
+    lprintf(debug, "%s\n", cache_home);
+    if (CONFIG.cache_dir) {
+        cache_del = cache_home;
+    } else {
+        cache_del = path_append(cache_home, "/httpdirfs/");
+    }
+    nftw(cache_del, ntfw_cb, 64, FTW_DEPTH | FTW_PHYS | FTW_MOUNT);
+    FREE(cache_home);
+    exit(EXIT_SUCCESS);
 }
 
 /**
@@ -910,7 +965,7 @@ void Cache_close(Cache *cf)
     lprintf(cache_lock_debug,
             "thread %x: unlocking cf_lock;\n", pthread_self());
     PTHREAD_MUTEX_UNLOCK(&cf_lock);
-    return Cache_free(cf);
+    Cache_free(cf);
 }
 
 /**

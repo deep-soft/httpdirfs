@@ -114,17 +114,38 @@ fuse_start:
     return 0;
 }
 
+static char *get_XDG_CONFIG_HOME()
+{
+    const char *default_config_subdir = "/.config";
+    char *config_dir = NULL;
+
+    const char *xdg_config_home = getenv("XDG_CONFIG_HOME");
+    if (xdg_config_home) {
+        config_dir = strndup(xdg_config_home, MAX_PATH_LEN);
+    } else {
+        const char *user_home = getenv("HOME");
+        if (user_home) {
+            config_dir = path_append(user_home, default_config_subdir);
+        } else {
+            lprintf(warning, "$HOME is unset\n");
+            const char *cur_dir = realpath("./", NULL);
+            if (cur_dir) {
+                config_dir = path_append(cur_dir, default_config_subdir);
+            } else {
+                lprintf(warning, "Could not get config directory\n");
+            }
+        }
+    }
+    return config_dir;
+}
+
 void parse_config_file(char ***argv, int *argc)
 {
     char *full_path;
     if (!config_path) {
-        char *xdg_config_home = getenv("XDG_CONFIG_HOME");
-        if (!xdg_config_home) {
-            char *home = getenv("HOME");
-            char *xdg_config_home_default = "/.config";
-            xdg_config_home = path_append(home, xdg_config_home_default);
-        }
+        char *xdg_config_home = get_XDG_CONFIG_HOME();
         full_path = path_append(xdg_config_home, "/httpdirfs/config");
+        FREE(xdg_config_home);
     } else {
         full_path = config_path;
     }
@@ -198,11 +219,12 @@ parse_arg_list(int argc, char **argv, char ***fuse_argv, int *fuse_argc)
         { "sonic-insecure", no_argument, NULL, 'L' },   /* 19 */
         { "insecure-tls", no_argument, NULL, 'L' },     /* 20 */
         { "config", required_argument, NULL, 'L' },     /* 21 */
-        { "single-file-mode", required_argument, NULL, 'L' },   /* 22 */
+        { "single-file-mode", no_argument, NULL, 'L' },   /* 22 */
         { "cacert", required_argument, NULL, 'L' },     /* 23 */
         { "proxy-cacert", required_argument, NULL, 'L' },       /* 24 */
         { "refresh-timeout", required_argument, NULL, 'L' },    /* 25 */
         { "http-header", required_argument, NULL, 'L' },        /* 26 */
+        { "cache-clear", no_argument, NULL, 'L' },     /* 27 */
         { 0, 0, 0, 0 }
     };
     while ((c =
@@ -314,6 +336,9 @@ parse_arg_list(int argc, char **argv, char ***fuse_argv, int *fuse_argc)
                 CONFIG.http_headers =
                     curl_slist_append(CONFIG.http_headers, strdup(optarg));
                 break;
+            case 27:
+                CacheSystem_clear();
+                break;
             default:
                 fprintf(stderr, "see httpdirfs -h for usage\n");
                 return 1;
@@ -369,6 +394,9 @@ HTTPDirFS options:\n\
         --cache             Enable cache (default: off)\n\
         --cache-location    Set a custom cache location\n\
                             (default: \"${XDG_CACHE_HOME}/httpdirfs\")\n\
+        --cache-clear       Delete the cache directory or the custom location\n\
+                            specifid with `--cache-location`, if the option is\n\
+                            seen first. Then exit in either case.\n\
         --cacert            Certificate authority for the server\n\
         --dl-seg-size       Set cache download segment size, in MB (default: 8)\n\
                             Note: this setting is ignored if previously\n\
