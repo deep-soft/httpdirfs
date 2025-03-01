@@ -36,7 +36,7 @@ static pthread_mutex_t cf_lock;
 static char *DATA_DIR;
 
 
-char *CacheSystem_get_cache_dir()
+char *CacheSystem_get_cache_dir(void)
 {
     if (CONFIG.cache_dir) {
         return CONFIG.cache_dir;
@@ -184,7 +184,7 @@ static int ntfw_cb(const char *fpath, const struct stat *sb, int typeflag, struc
     return remove(fpath);
 }
 
-void CacheSystem_clear()
+void CacheSystem_clear(void)
 {
     char *cache_home = CacheSystem_get_cache_dir();
     const char *cache_del;
@@ -519,7 +519,7 @@ int CacheDir_create(const char *dirn)
 /**
  * \brief Allocate a new cache data structure
  */
-static Cache *Cache_alloc()
+static Cache *Cache_alloc(void)
 {
     Cache *cf = CALLOC(1, sizeof(Cache));
 
@@ -552,20 +552,36 @@ static Cache *Cache_alloc()
  */
 static void Cache_free(Cache *cf)
 {
-    if (pthread_mutex_destroy(&cf->seek_lock)) {
-        lprintf(fatal, "could not destroy seek_lock!\n");
+    int err_code = 0;
+
+    PTHREAD_MUTEX_LOCK(&cf->seek_lock);
+    PTHREAD_MUTEX_UNLOCK(&cf->seek_lock);
+    err_code = pthread_mutex_destroy(&cf->seek_lock);
+    if (err_code) {
+        lprintf(fatal, "could not destroy seek_lock: %d, %s!\n", err_code, 
+        strerror(err_code));
     }
 
-    if (pthread_mutex_destroy(&cf->w_lock)) {
-        lprintf(fatal, "could not destroy w_lock!\n");
+    PTHREAD_MUTEX_LOCK(&cf->w_lock);
+    PTHREAD_MUTEX_UNLOCK(&cf->w_lock);
+    err_code = pthread_mutex_destroy(&cf->w_lock);
+    if (err_code) {
+        lprintf(fatal, "could not destroy w_lock: %d, %s!\n", err_code, 
+        strerror(err_code));
     }
 
-    if (pthread_mutex_destroy(&cf->bgt_lock)) {
-        lprintf(fatal, "could not destroy bgt_lock!\n");
+    PTHREAD_MUTEX_LOCK(&cf->bgt_lock);
+    PTHREAD_MUTEX_UNLOCK(&cf->bgt_lock);
+    err_code = pthread_mutex_destroy(&cf->bgt_lock);
+    if (err_code) {
+        lprintf(fatal, "could not destroy bgt_lock: %d, %s!\n", err_code, 
+        strerror(err_code));
     }
 
-    if (pthread_mutexattr_destroy(&cf->bgt_lock_attr)) {
-        lprintf(fatal, "could not destroy bgt_lock_attr!\n");
+    err_code = pthread_mutexattr_destroy(&cf->bgt_lock_attr);
+    if (err_code) {
+        lprintf(fatal, "could not destroy bgt_lock_attr: %d, %s!\n", err_code, 
+        strerror(err_code));
     }
 
     if (cf->path) {
@@ -750,8 +766,8 @@ int Cache_create(const char *path)
     Meta_create(cf);
 
     if (Meta_open(cf)) {
-        Cache_free(cf);
         lprintf(error, "cannot open metadata file, %s.\n", fn);
+        Cache_free(cf);
     }
 
     if (Meta_write(cf)) {
@@ -766,6 +782,7 @@ int Cache_create(const char *path)
 
     Data_create(cf);
 
+    lprintf(cache_lock_debug, "Flusing cache file for %s after creating.\n", fn);
     Cache_free(cf);
 
     int res = Cache_exist(fn);
@@ -858,8 +875,8 @@ Cache *Cache_open(const char *fn)
     cf->link = link;
 
     if (Meta_open(cf)) {
-        Cache_free(cf);
         lprintf(error, "cannot open metadata file %s.\n", fn);
+        Cache_free(cf);
 
         lprintf(cache_lock_debug,
                 "thread %x: unlocking cf_lock;\n", pthread_self());
@@ -871,8 +888,8 @@ Cache *Cache_open(const char *fn)
      * Corrupt metadata
      */
     if (Meta_read(cf)) {
-        Cache_free(cf);
         lprintf(error, "metadata error: %s.\n", fn);
+        Cache_free(cf);
 
         lprintf(cache_lock_debug,
                 "thread %x: unlocking cf_lock;\n", pthread_self());
@@ -911,8 +928,8 @@ cf->content_length: %ld, Data_size(fn): %ld.\n", fn, cf->content_length,
     }
 
     if (Data_open(cf)) {
-        Cache_free(cf);
         lprintf(error, "cannot open data file %s.\n", fn);
+        Cache_free(cf);
 
         lprintf(cache_lock_debug,
                 "thread %x: unlocking cf_lock;\n", pthread_self());
@@ -935,7 +952,7 @@ cf->content_length: %ld, Data_size(fn): %ld.\n", fn, cf->content_length,
 void Cache_close(Cache *cf)
 {
     lprintf(cache_lock_debug,
-            "thread %x: locking cf_lock;\n", pthread_self());
+            "thread %x: locking cf_lock: %s\n", pthread_self(), cf->path);
     PTHREAD_MUTEX_LOCK(&cf_lock);
 
     cf->cache_opened--;
@@ -943,7 +960,8 @@ void Cache_close(Cache *cf)
     if (cf->cache_opened > 0) {
 
         lprintf(cache_lock_debug,
-                "thread %x: unlocking cf_lock;\n", pthread_self());
+                "thread %x: unlocking cf_lock: %s, cache_opened: %d\n",
+                pthread_self(), cf->path, cf->cache_opened);
         PTHREAD_MUTEX_UNLOCK(&cf_lock);
         return;
     }
@@ -963,9 +981,10 @@ void Cache_close(Cache *cf)
     cf->link->cache_ptr = NULL;
 
     lprintf(cache_lock_debug,
-            "thread %x: unlocking cf_lock;\n", pthread_self());
-    PTHREAD_MUTEX_UNLOCK(&cf_lock);
+            "thread %x: unlocking cf_lock, cache closed: %s\n", pthread_self(),
+            cf->path);
     Cache_free(cf);
+    PTHREAD_MUTEX_UNLOCK(&cf_lock);
 }
 
 /**

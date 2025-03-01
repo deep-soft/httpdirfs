@@ -25,30 +25,28 @@ If you only want to access a single file, there is also a simplified
 Single File Mode. This can be especially useful if the web server does not
 present a HTTP directory listing.
 
-## Installation
+## Usage
+Basic usage:
 
-Please note if you install HTTDirFS from a repository, it can be outdated.
+    ./httpdirfs -f --cache $URL $MOUNT_POINT
 
-### Debian 12 "Bookworm"
+An example URL would be
+[Debian CD Image Server](https://cdimage.debian.org/debian-cd/). The ``-f`` flag
+keeps the program in the foreground, which is useful for monitoring which URL
+the filesystem is visiting.
 
-HTTPDirFS is available as a package in Debian 12 "Bookworm", If you are on
-Debian Bookworm, you can simply run the following
-command as ``root``:
+For more usage related help, run
 
- apt install httpdirfs
+    ./httpdirfs --help
 
-For more information on the status of HTTDirFS in Debian, please refer to
-[Debian package tracker](https://tracker.debian.org/pkg/httpdirfs-fuse)
+or
 
-### Arch Linux
+    man httpdirfs
 
-HTTPDirFS is available in the
-[Arch User Repository](https://aur.archlinux.org/packages/httpdirfs).
+Please note that the man page only works if you have installed HTTPDirFS
+properly.
 
-### FreeBSD
-
-HTTPDirFS is available in the
-[FreeBSD Ports Collection](https://www.freshports.org/sysutils/fusefs-httpdirfs/).
+The full usage flags is also documented in the [usage](USAGE.md) page.
 
 ## Compilation
 
@@ -91,27 +89,37 @@ I don't have the resources to test out compilation for Linux distributions
 other than Debian. I also do not have the resources to test out compilation for
 FreeBSD or macOS. Thereforce I have removed the instruction on how to compile
 for these operating systems in the README for now. Please feel free to send me a
-pull request to add them back in.
+pull request to add them back in. It is known that HTTPDirFS 
+[does compile](https://github.com/fangfufu/httpdirfs/issues/165) on FreeBSD.
 
-## Usage
+## Installation
 
- ./httpdirfs -f --cache $URL $MOUNT_POINT
+Please note if you install HTTDirFS from a repository, it can be outdated.
 
-An example URL would be
-[Debian CD Image Server](https://cdimage.debian.org/debian-cd/). The ``-f`` flag
-keeps the program in the foreground, which is useful for monitoring which URL
-the filesystem is visiting.
+### Debian 12 "Bookworm"
 
-For more usage related help, run
+HTTPDirFS is available as a package in Debian 12 "Bookworm", If you are on
+Debian Bookworm, you can simply run the following
+command as ``root``:
 
-    ./httpdirfs --help
+ apt install httpdirfs
 
-or
+For more information on the status of HTTDirFS in Debian, please refer to
+[Debian package tracker](https://tracker.debian.org/pkg/httpdirfs-fuse)
 
-    man httpdirfs
+### Arch Linux
 
-Please note that the man page only works if you have installed HTTPDirFS
-properly.
+HTTPDirFS is available in the
+[Arch User Repository](https://aur.archlinux.org/packages/httpdirfs).
+
+### NixOS
+
+HTTPDirFS is available as a [package](https://mynixos.com/nixpkgs/package/httpdirfs).
+
+### FreeBSD
+
+HTTPDirFS is available in the
+[FreeBSD Ports Collection](https://www.freshports.org/sysutils/fusefs-httpdirfs/).
 
 ## Airsonic / Subsonic server support
 
@@ -262,7 +270,14 @@ disable this check by using the ``--no-range-check`` flag.
 
 - Linux Format - Issue [264](https://www.linuxformat.com/archives?issue=264), July 2020
 
-## Acknowledgement
+## Contributors
+
+Thanks for your contribution to the project!
+
+[![Contributors Avatars](https://contributors-img.web.app/image?repo=fangfufu/httpdirfs)](https://github.com/fangfufu/httpdirfs/graphs/contributors)
+[![Contributors Count](https://img.shields.io/github/contributors-anon/fangfufu/httpdirfs?style=for-the-badge&logo=httpdirfs)](https://github.com/fangfufu/httpdirfs/graphs/contributors)
+
+## Special Acknowledgement
 
 - First of all, I would like to thank
 [Jerome Charaoui](https://github.com/jcharaoui) for being the Debian Maintainer
@@ -279,3 +294,15 @@ a whole bunch of code improvements and the improved build system.
 - I would like to thank [-Archivist](https://www.reddit.com/user/-Archivist/)
 for not providing FTP or WebDAV access to his server. This piece of software was
 written in direct response to his appalling behaviour.
+
+## License
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.

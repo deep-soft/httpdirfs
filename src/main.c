@@ -9,7 +9,7 @@
 
 void add_arg(char ***fuse_argv_ptr, int *fuse_argc, char *opt_string);
 static void print_help(char *program_name, int long_help);
-static void print_long_help();
+static void print_long_help(void);
 static int
 parse_arg_list(int argc, char **argv, char ***fuse_argv, int *fuse_argc);
 void parse_config_file(char ***argv, int *argc);
@@ -114,7 +114,7 @@ fuse_start:
     return 0;
 }
 
-static char *get_XDG_CONFIG_HOME()
+static char *get_XDG_CONFIG_HOME(void)
 {
     const char *default_config_subdir = "/.config";
     char *config_dir = NULL;
@@ -225,6 +225,7 @@ parse_arg_list(int argc, char **argv, char ***fuse_argv, int *fuse_argc)
         { "refresh-timeout", required_argument, NULL, 'L' },    /* 25 */
         { "http-header", required_argument, NULL, 'L' },        /* 26 */
         { "cache-clear", no_argument, NULL, 'L' },     /* 27 */
+        { "zero-len-is-dir", no_argument, NULL, 'L' }, /* 28 */
         { 0, 0, 0, 0 }
     };
     while ((c =
@@ -339,6 +340,9 @@ parse_arg_list(int argc, char **argv, char ***fuse_argv, int *fuse_argc)
             case 27:
                 CacheSystem_clear();
                 break;
+            case 28:
+                CONFIG.zero_len_is_dir = 1;
+                break;
             default:
                 fprintf(stderr, "see httpdirfs -h for usage\n");
                 return 1;
@@ -373,7 +377,7 @@ static void print_help(char *program_name, int long_help)
     }
 }
 
-static void print_long_help()
+static void print_long_help(void)
 {
     /* FUSE prints its help to stderr */
     fprintf(stderr, "\n\
@@ -416,6 +420,7 @@ HTTPDirFS options:\n\
         --user-agent        Set user agent string (default: \"HTTPDirFS\")\n\
         --no-range-check    Disable the built-in check for the server's support\n\
                             for HTTP range requests\n\
+        --zero-len-is-dir   If a file has a zero length, treat it as a directory\n\
         --insecure-tls      Disable licurl TLS certificate verification by\n\
                             setting CURLOPT_SSL_VERIFYHOST to 0\n\
         --single-file-mode  Single file mode - rather than mounting a whole\n\

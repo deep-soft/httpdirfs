@@ -452,7 +452,12 @@ void Link_set_file_stat(Link *this_link, CURL *curl)
             lprintf(error, "%s", curl_easy_strerror(ret));
         }
         if (cl <= 0) {
-            this_link->type = LINK_INVALID;
+            if (CONFIG.zero_len_is_dir) {
+                this_link->type = LINK_DIR;
+            } else {
+                lprintf(info, "Zero length file: %s\n", this_link->f_url);
+                this_link->type = LINK_INVALID;
+            }
         } else {
             this_link->type = LINK_FILE;
             this_link->content_length = cl;
@@ -1072,10 +1077,11 @@ long Link_download(Link *link, char *output_buf, size_t req_size, off_t offset)
     header.curr_size = 0;
     header.data = NULL;
 
-    if (offset + req_size > link->content_length) {
+    size_t request_end = offset + req_size;
+    if (request_end > link->content_length) {
         lprintf(info,
-                "requested size too larger than remaining size, req_size: %lu, recv: %ld, content-length: %ld\n",
-                req_size, recv, link->content_length);
+                "requested size larger than remaining size, request_end: \
+%lu, content-length: %ld\n", request_end, link->content_length);
         req_size = link->content_length - offset;
     }
 
@@ -1083,19 +1089,18 @@ long Link_download(Link *link, char *output_buf, size_t req_size, off_t offset)
 
     transfer_blocking(curl);
 
-    curl_off_t recv = Link_download_cleanup(curl, &header);
+    curl_off_t recv_sz = Link_download_cleanup(curl, &header);
 
-    /* The extra 1 byte is probably for '\0' */
-    if (recv - 1 == (long int) req_size) {
-        recv--;
-    } else if (offset + req_size < link->content_length) {
-        lprintf(error, "req_size: %lu, recv: %ld\n", req_size, recv);
+    if (recv_sz != (long int) req_size)
+    {
+        lprintf(error, "req_size != recv, req_size: %lu, recv: %ld\n",
+                req_size, recv_sz);
     }
 
-    memmove(output_buf, ts.data, recv);
+    memmove(output_buf, ts.data, recv_sz);
     FREE(ts.data);
 
-    return recv;
+    return recv_sz;
 }
 
 long path_download(const char *path, char *output_buf, size_t req_size,

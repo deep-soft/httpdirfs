@@ -13,8 +13,7 @@ typedef enum {
     link_lock_debug = 1 << 5,
     network_lock_debug = 1 << 6,
     cache_lock_debug = 1 << 7,
-    memcache_debug = 1 << 8,
-    libcurl_debug = 1 << 9,
+    libcurl_debug = 1 << 8,
 } LogType;
 
 /**
@@ -25,7 +24,7 @@ typedef enum {
 /**
  * \brief Get the log level from the environment.
  */
-int log_level_init();
+int log_level_init(void);
 
 /**
  * \brief Log printf
@@ -44,6 +43,6 @@ void log_printf(LogType type, const char *file, const char *func, int line,
 /**
  * \brief Print the version information for HTTPDirFS
  */
-void print_version();
+void print_version(void);
 
 #endif
